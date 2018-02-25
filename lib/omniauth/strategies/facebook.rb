@@ -64,12 +64,22 @@ module OmniAuth
 
       def callback_phase
         with_authorization_code! do
-          super
+          host = URI.parse(request.params['domain_redirect']).host if request.params['domain_redirect']
+
+          if request.base_url == "#{APP_CONFIG['protocol']}://app.#{APP_CONFIG['host']}" && host && host.downcase != "app.#{APP_CONFIG['host']}".downcase
+            redirect "#{APP_CONFIG['protocol']}://#{request.params['domain_redirect']}#{request.fullpath}"
+          else
+            super
+          end
         end
       rescue NoAuthorizationCodeError => e
         fail!(:no_authorization_code, e)
       rescue OmniAuth::Facebook::SignedRequest::UnknownSignatureAlgorithmError => e
         fail!(:unknown_signature_algorithm, e)
+      end
+
+      def full_host
+        "#{APP_CONFIG['protocol']}://app.#{APP_CONFIG['host']}"
       end
 
       # NOTE If we're using code from the signed request then FB sets the redirect_uri to '' during the authorize
@@ -80,7 +90,15 @@ module OmniAuth
           ''
         else
           # Fixes regression in omniauth-oauth2 v1.4.0 by https://github.com/intridea/omniauth-oauth2/commit/85fdbe117c2a4400d001a6368cc359d88f40abc7
-          options[:callback_url] || (full_host + script_name + callback_path)
+          url = options[:callback_url] || (full_host + script_name + callback_path)
+          if request.params['redirect_to']
+            uri = URI.parse(request.params['redirect_to'])
+            domain = uri.host
+            url = URI.encode("#{url}?domain_redirect=#{domain}")
+          elsif request.params['domain_redirect']
+            url = URI.encode("#{url}?domain_redirect=#{request.params['domain_redirect']}")
+          end
+          url
         end
       end
 
